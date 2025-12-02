@@ -50,6 +50,10 @@ export const api = {
     return this.request('/admin/guests');
   },
 
+  async getInvitations() {
+    return this.request('/admin/invitations');
+  },
+
   async getGuest(id) {
     return this.request(`/admin/guests/${id}`);
   },
@@ -68,15 +72,15 @@ export const api = {
   },
 
   async getRSVPs() {
-    return this.request('/admin/rsvps');
+    return this.request('/admin/confirmations');
   },
 
   async getRSVP(id) {
-    return this.request(`/admin/rsvps/${id}`);
+    return this.request(`/admin/confirmations/${id}`);
   },
 
   async updateRSVP(id, data) {
-    return this.request(`/admin/rsvps/${id}`, {
+    return this.request(`/admin/confirmations/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     });

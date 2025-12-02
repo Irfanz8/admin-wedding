@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Search, CheckCircle, XCircle, MessageSquare, Filter } from 'lucide-react'
+import { Search, CheckCircle, XCircle, MessageSquare, Filter, QrCode, Phone, Mail } from 'lucide-react'
 import api from '../config/api'
 
 export default function RSVPs() {
@@ -7,6 +7,7 @@ export default function RSVPs() {
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [filterStatus, setFilterStatus] = useState('all')
+  const [pagination, setPagination] = useState(null)
 
   useEffect(() => {
     fetchRSVPs()
@@ -15,40 +16,84 @@ export default function RSVPs() {
   const fetchRSVPs = async () => {
     try {
       setLoading(true)
-      const data = await api.getRSVPs()
-      const rsvpsData = data.data || data || []
-      setRsvps(Array.isArray(rsvpsData) ? rsvpsData : [])
+      const response = await api.getRSVPs()
+      const confirmations = response.data?.confirmations || response.confirmations || response.data || []
+      const paginationData = response.data?.pagination || response.pagination || null
+      setRsvps(Array.isArray(confirmations) ? confirmations : [])
+      setPagination(paginationData)
     } catch (error) {
       console.error('Error fetching RSVPs:', error)
       setRsvps([])
+      setPagination(null)
     } finally {
       setLoading(false)
     }
   }
 
-  const handleUpdateStatus = async (id, newStatus) => {
+  const handleUpdateStatus = async (id, isConfirmed) => {
     try {
-      await api.updateRSVP(id, { status: newStatus })
+      await api.updateRSVP(id, { confirmed: isConfirmed })
       fetchRSVPs()
     } catch (error) {
       alert('Gagal mengupdate status: ' + error.message)
     }
   }
 
+  const getStatusInfo = (rsvp) => {
+    if (rsvp.confirmed === true) {
+      return {
+        label: 'Confirmed',
+        badge: 'bg-green-100 text-green-800 border border-green-200',
+        chip: 'bg-gradient-to-br from-green-500 to-emerald-500',
+      }
+    }
+
+    if (rsvp.confirmed === false) {
+      return {
+        label: 'Declined',
+        badge: 'bg-red-100 text-red-800 border border-red-200',
+        chip: 'bg-gradient-to-br from-red-500 to-rose-500',
+      }
+    }
+
+    return {
+      label: 'Pending',
+      badge: 'bg-yellow-100 text-yellow-800 border border-yellow-200',
+      chip: 'bg-gradient-to-br from-yellow-500 to-orange-500',
+    }
+  }
+
   const filteredRSVPs = rsvps.filter((rsvp) => {
-    const matchesSearch = JSON.stringify(rsvp).toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesFilter = filterStatus === 'all' || 
-      rsvp.status === filterStatus || 
-      (filterStatus === 'confirmed' && (rsvp.status === 'yes' || rsvp.status === 'confirmed')) ||
-      (filterStatus === 'declined' && (rsvp.status === 'no' || rsvp.status === 'declined'))
+    const searchPayload = JSON.stringify({
+      guest_name: rsvp.guest_name,
+      guest_email: rsvp.guest_email,
+      phone: rsvp.phone,
+      confirmation_code: rsvp.confirmation_code,
+      invitation_code: rsvp.invitations?.invitation_code,
+      dietary_restrictions: rsvp.dietary_restrictions,
+    })
+      .toLowerCase()
+
+    const matchesSearch = searchPayload.includes(searchTerm.toLowerCase())
+
+    const status = rsvp.confirmed === true
+      ? 'confirmed'
+      : rsvp.confirmed === false
+      ? 'declined'
+      : 'pending'
+
+    const matchesFilter =
+      filterStatus === 'all' ||
+      filterStatus === status
+
     return matchesSearch && matchesFilter
   })
 
   const stats = {
     total: rsvps.length,
-    confirmed: rsvps.filter((r) => r.status === 'confirmed' || r.status === 'yes').length,
-    declined: rsvps.filter((r) => r.status === 'declined' || r.status === 'no').length,
-    pending: rsvps.filter((r) => !r.status || (r.status !== 'confirmed' && r.status !== 'yes' && r.status !== 'declined' && r.status !== 'no')).length,
+    confirmed: rsvps.filter((r) => r.confirmed === true).length,
+    declined: rsvps.filter((r) => r.confirmed === false).length,
+    pending: rsvps.filter((r) => r.confirmed === null || typeof r.confirmed === 'undefined').length,
   }
 
   if (loading) {
@@ -129,10 +174,11 @@ export default function RSVPs() {
           <table className="w-full">
             <thead className="bg-gradient-to-r from-indigo-50 to-purple-50">
               <tr>
-                <th className="text-left py-4 px-6 font-semibold text-gray-700">Nama</th>
-                <th className="text-left py-4 px-6 font-semibold text-gray-700">Email</th>
+                <th className="text-left py-4 px-6 font-semibold text-gray-700">Guest</th>
+                <th className="text-left py-4 px-6 font-semibold text-gray-700">Contact</th>
+                <th className="text-left py-4 px-6 font-semibold text-gray-700">Invitation</th>
                 <th className="text-left py-4 px-6 font-semibold text-gray-700">Status</th>
-                <th className="text-left py-4 px-6 font-semibold text-gray-700">Pesan</th>
+                <th className="text-left py-4 px-6 font-semibold text-gray-700">Preferences</th>
                 <th className="text-center py-4 px-6 font-semibold text-gray-700">Actions</th>
               </tr>
             </thead>
@@ -153,9 +199,7 @@ export default function RSVPs() {
                 </tr>
               ) : (
                 filteredRSVPs.map((rsvp) => {
-                  const status = rsvp.status || 'pending'
-                  const isConfirmed = status === 'confirmed' || status === 'yes'
-                  const isDeclined = status === 'declined' || status === 'no'
+                  const statusInfo = getStatusInfo(rsvp)
                   
                   return (
                     <tr 
@@ -163,52 +207,92 @@ export default function RSVPs() {
                       className="hover:bg-gradient-to-r hover:from-indigo-50/50 hover:to-purple-50/50 transition-all duration-200 group"
                     >
                       <td className="py-4 px-6">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-white font-semibold shadow-md ${
-                            isConfirmed ? 'bg-gradient-to-br from-green-500 to-emerald-500' :
-                            isDeclined ? 'bg-gradient-to-br from-red-500 to-rose-500' :
-                            'bg-gradient-to-br from-yellow-500 to-orange-500'
-                          }`}>
-                            {(rsvp.name || rsvp.nama || rsvp.guestName || '?').charAt(0).toUpperCase()}
+                        <div className="flex flex-col space-y-1">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-white font-semibold shadow-md ${statusInfo.chip}`}>
+                              {(rsvp.guest_name || '?').charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="font-medium text-gray-800">{rsvp.guest_name || '-'}</p>
+                              <p className="text-xs text-gray-400">Code: {rsvp.confirmation_code || '-'}</p>
+                            </div>
                           </div>
-                          <span className="font-medium text-gray-800">{rsvp.name || rsvp.nama || rsvp.guestName || '-'}</span>
                         </div>
                       </td>
-                      <td className="py-4 px-6 text-gray-600">{rsvp.email || rsvp.guestEmail || '-'}</td>
-                      <td className="py-4 px-6">
-                        <span
-                          className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold ${
-                            isConfirmed
-                              ? 'bg-green-100 text-green-800 border border-green-200'
-                              : isDeclined
-                              ? 'bg-red-100 text-red-800 border border-red-200'
-                              : 'bg-yellow-100 text-yellow-800 border border-yellow-200'
-                          }`}
-                        >
-                          {isConfirmed ? '✓ Confirmed' : isDeclined ? '✗ Declined' : '⏳ Pending'}
-                        </span>
+                      <td className="py-4 px-6 text-gray-600">
+                        <div className="space-y-1 text-sm">
+                          <div className="flex items-center gap-2">
+                            <Mail size={14} className="text-gray-400" />
+                            <span>{rsvp.guest_email || '-'}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Phone size={14} className="text-gray-400" />
+                            <span>{rsvp.phone || '-'}</span>
+                          </div>
+                        </div>
                       </td>
-                      <td className="py-4 px-6">
-                        <div className="max-w-xs">
-                          <p className="text-gray-600 text-sm truncate" title={rsvp.message || rsvp.pesan || '-'}>
-                            {rsvp.message || rsvp.pesan || '-'}
+                      <td className="py-4 px-6 text-gray-600">
+                        <div className="space-y-1 text-sm">
+                          <p className="font-medium text-gray-800">{rsvp.invitations?.invitation_code || '-'}</p>
+                          <p className="text-gray-500 text-xs">
+                            {rsvp.invitations?.bride_name || '-'} & {rsvp.invitations?.groom_name || '-'}
+                          </p>
+                          <p className="text-gray-400 text-xs">
+                            Owner: {rsvp.invitations?.users?.name || '-'}
                           </p>
                         </div>
                       </td>
                       <td className="py-4 px-6">
+                        <span
+                          className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold gap-1 ${statusInfo.badge}`}
+                        >
+                          {statusInfo.label}
+                        </span>
+                        <div className="text-xs text-gray-500 mt-1">
+                          {rsvp.is_checked_in ? (
+                            <span className="text-green-600">Checked-in</span>
+                          ) : (
+                            <span>Belum check-in</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-4 px-6">
+                        <div className="space-y-1 text-sm">
+                          <p>
+                            <span className="text-gray-500">Plus One:</span>{' '}
+                            <span className="font-medium">{rsvp.plus_one ? 'Yes' : 'No'}</span>
+                          </p>
+                          <p className="text-gray-600">
+                            <span className="text-gray-500">Dietary:</span>{' '}
+                            {rsvp.dietary_restrictions || '-'}
+                          </p>
+                          {rsvp.qr_code_data && (
+                            <a
+                              href={rsvp.qr_code_data}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center text-indigo-600 hover:text-indigo-800 text-xs font-semibold gap-1"
+                            >
+                              <QrCode size={14} />
+                              QR Code
+                            </a>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-4 px-6">
                         <div className="flex items-center justify-center gap-2">
-                          {!isConfirmed && (
+                          {rsvp.confirmed !== true && (
                             <button
-                              onClick={() => handleUpdateStatus(rsvp.id || rsvp._id, 'confirmed')}
+                              onClick={() => handleUpdateStatus(rsvp.id || rsvp._id, true)}
                               className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-all duration-200 hover:scale-110"
                               title="Mark as Confirmed"
                             >
                               <CheckCircle size={18} />
                             </button>
                           )}
-                          {!isDeclined && (
+                          {rsvp.confirmed !== false && (
                             <button
-                              onClick={() => handleUpdateStatus(rsvp.id || rsvp._id, 'declined')}
+                              onClick={() => handleUpdateStatus(rsvp.id || rsvp._id, false)}
                               className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200 hover:scale-110"
                               title="Mark as Declined"
                             >
@@ -224,6 +308,18 @@ export default function RSVPs() {
             </tbody>
           </table>
         </div>
+        {pagination && (
+          <div className="flex flex-col md:flex-row items-center justify-between px-6 py-4 text-sm text-gray-500 border-t border-gray-100">
+            <p>
+              Showing page <span className="font-semibold text-gray-700">{pagination.page}</span> of{' '}
+              <span className="font-semibold text-gray-700">{pagination.totalPages}</span>
+            </p>
+            <p>
+              Total confirmations:{' '}
+              <span className="font-semibold text-gray-700">{pagination.total}</span>
+            </p>
+          </div>
+        )}
       </div>
     </div>
   )
