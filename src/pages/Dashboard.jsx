@@ -20,8 +20,25 @@ export default function Dashboard() {
       setLoading(true)
       // Try to get stats from API
       try {
-        const statsData = await api.getStats()
-        setStats(statsData)
+        const statsResponse = await api.getStats()
+        const data = statsResponse.data || {}
+
+        // Menyesuaikan dengan struktur:
+        // {
+        //   status: "success",
+        //   message: "...",
+        //   data: {
+        //     users: { total, byRole: { ... } },
+        //     invitations: { total, recent },
+        //     confirmations: { total, confirmed, pending, recent }
+        //   }
+        // }
+        setStats({
+          totalGuests: data.users?.total || 0,
+          totalRSVPs: data.invitations?.total || 0,
+          confirmed: data.confirmations?.confirmed || 0,
+          declined: data.confirmations?.pending || 0,
+        })
       } catch (err) {
         // Fallback: calculate from guests and RSVPs
         const [guests, rsvps] = await Promise.all([
