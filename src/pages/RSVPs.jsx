@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Search, CheckCircle, XCircle, MessageSquare, Filter, QrCode, Phone, Mail } from 'lucide-react'
+import { Search, CheckCircle, XCircle, MessageSquare, Filter, QrCode, Phone, Mail, X } from 'lucide-react'
 import api from '../config/api'
 
 export default function RSVPs() {
@@ -8,6 +8,7 @@ export default function RSVPs() {
   const [searchTerm, setSearchTerm] = useState('')
   const [filterStatus, setFilterStatus] = useState('all')
   const [pagination, setPagination] = useState(null)
+  const [selectedQRCode, setSelectedQRCode] = useState(null)
 
   useEffect(() => {
     fetchRSVPs()
@@ -267,15 +268,17 @@ export default function RSVPs() {
                             {rsvp.dietary_restrictions || '-'}
                           </p>
                           {rsvp.qr_code_data && (
-                            <a
-                              href={rsvp.qr_code_data}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center text-indigo-600 hover:text-indigo-800 text-xs font-semibold gap-1"
+                            <button
+                              onClick={() => setSelectedQRCode({
+                                qrCodeData: rsvp.qr_code_data,
+                                guestName: rsvp.guest_name,
+                                confirmationCode: rsvp.confirmation_code
+                              })}
+                              className="inline-flex items-center text-indigo-600 hover:text-indigo-800 text-xs font-semibold gap-1 transition-colors"
                             >
                               <QrCode size={14} />
                               QR Code
-                            </a>
+                            </button>
                           )}
                         </div>
                       </td>
@@ -320,6 +323,168 @@ export default function RSVPs() {
             </p>
           </div>
         )}
+      </div>
+
+      {/* QR Code Modal */}
+      {selectedQRCode && (
+        <QRCodeModal
+          qrCodeData={selectedQRCode.qrCodeData}
+          guestName={selectedQRCode.guestName}
+          confirmationCode={selectedQRCode.confirmationCode}
+          onClose={() => setSelectedQRCode(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+function QRCodeModal({ qrCodeData, guestName, confirmationCode, onClose }) {
+  const [qrImageUrl, setQrImageUrl] = useState(null)
+  const [qrData, setQrData] = useState(null)
+  const [generatedQRUrl, setGeneratedQRUrl] = useState(null)
+
+  useEffect(() => {
+    // Parse QR code data
+    if (qrCodeData) {
+      if (qrCodeData.startsWith('data:text/plain;base64,')) {
+        // Decode base64 JSON data
+        try {
+          const base64Data = qrCodeData.split(',')[1]
+          const decodedData = JSON.parse(atob(base64Data))
+          setQrData(decodedData)
+          
+          // Generate QR code from JSON data using API
+          const jsonString = JSON.stringify(decodedData)
+          const encodedData = encodeURIComponent(jsonString)
+          // Use QR code API to generate visual QR code
+          const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodedData}`
+          setGeneratedQRUrl(qrApiUrl)
+        } catch (error) {
+          console.error('Error decoding QR code data:', error)
+        }
+      } else if (qrCodeData.startsWith('data:image')) {
+        // Direct image data URL
+        setQrImageUrl(qrCodeData)
+      } else {
+        // Assume it's a URL or other format
+        setQrData({ raw: qrCodeData })
+        // Generate QR code from raw data
+        const encodedData = encodeURIComponent(qrCodeData)
+        const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodedData}`
+        setGeneratedQRUrl(qrApiUrl)
+      }
+    }
+  }, [qrCodeData])
+
+  const handleDownload = () => {
+    const imageUrl = qrImageUrl || generatedQRUrl
+    if (imageUrl) {
+      const link = document.createElement('a')
+      link.href = imageUrl
+      link.download = `qr-code-${confirmationCode || 'guest'}.png`
+      link.target = '_blank'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+    }
+  }
+
+  return (
+    <div 
+      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn"
+      onClick={onClose}
+    >
+      <div 
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-md transform transition-all animate-fadeIn"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="p-6 border-b border-gray-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-2xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
+                QR Code
+              </h2>
+              <p className="text-sm text-gray-500 mt-1">
+                {guestName || 'Guest'} - {confirmationCode || 'Confirmation'}
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <svg className="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* QR Code Content */}
+        <div className="p-6">
+          {(qrImageUrl || generatedQRUrl) ? (
+            <div className="flex flex-col items-center space-y-4">
+              <div className="bg-white p-6 rounded-xl shadow-lg border-4 border-gray-100">
+                <img 
+                  src={qrImageUrl || generatedQRUrl} 
+                  alt="QR Code" 
+                  className="w-64 h-64"
+                  onError={(e) => {
+                    e.target.style.display = 'none'
+                    e.target.nextSibling.style.display = 'flex'
+                  }}
+                />
+                <div className="w-64 h-64 hidden items-center justify-center">
+                  <QrCode className="text-gray-400" size={48} />
+                </div>
+              </div>
+              {qrData && (
+                <div className="w-full bg-gray-50 rounded-xl p-3 border border-gray-200">
+                  <p className="text-xs font-semibold text-gray-700 mb-1">Confirmation Code:</p>
+                  <p className="text-sm font-mono text-indigo-600">{qrData.confirmation_code || confirmationCode}</p>
+                </div>
+              )}
+              <button
+                onClick={handleDownload}
+                className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 transition-all duration-200 font-medium shadow-lg hover:shadow-xl"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Download QR Code
+              </button>
+            </div>
+          ) : qrData ? (
+            <div className="space-y-4">
+              <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+                <p className="text-sm font-semibold text-gray-700 mb-2">QR Code Data:</p>
+                <pre className="text-xs text-gray-600 overflow-auto max-h-48 bg-white p-3 rounded border">
+                  {JSON.stringify(qrData, null, 2)}
+                </pre>
+              </div>
+              <p className="text-sm text-gray-500 text-center">
+                QR code image tidak tersedia. Data di atas dapat digunakan untuk generate QR code.
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center space-y-4 py-8">
+              <div className="w-24 h-24 bg-gray-100 rounded-xl flex items-center justify-center">
+                <QrCode className="text-gray-400" size={48} />
+              </div>
+              <p className="text-gray-500">QR code data tidak tersedia</p>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="p-6 border-t border-gray-200 flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-6 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium"
+          >
+            Tutup
+          </button>
+        </div>
       </div>
     </div>
   )
